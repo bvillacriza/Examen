@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h> // <> -> Cuando es libreria estandar || "" -> Cuando es una libreria que yo hice
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,14 +44,19 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim16;
 
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN PV */
+uint16_t duty = 0; // Variable para almacenar el valor del PWM
+uint16_t maxDuty = 0; // Variable para controlar el maximo del ciclo util
+char uartTxBuffer[32]; // Buffer para almacenar el texto que se enviará por UART
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM16_Init(void);
@@ -92,10 +97,19 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_TIM3_Init();
   MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
+
+
+  HAL_TIM_Base_Start_IT(&htim16);// Iniciamos el contador del Timer 16 en modo Interrupción
+
+
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);//  Iniciamos el PWM en el Timmer 3 en el canal 1 (PA6)
+
+  maxDuty = htim3.Instance->ARR;// Definimos la variable maxDuty igual al registro ARR
 
   /* USER CODE END 2 */
 
@@ -103,6 +117,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+	  // se va aumentado el valor del ciclo para conseguir aumentar el brillo
+		  for (duty = 0; duty < maxDuty; ++duty) {
+			htim3.Instance->CCR1 = duty; // El ancho del  pulso del canal 0 (PA6) va a ir incrementando hasta llegar al ARR
+	        sprintf(uartTxBuffer, "PWM: %d\r\n", duty);
+	        HAL_UART_Transmit(&huart2, (uint8_t*)uartTxBuffer, 8, 20);
+			HAL_Delay(1);
+		}
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -316,6 +339,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -353,7 +392,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	// Verificamos que la interrupción provenga del Timer 16
+	if (htim == &htim16)
+	{
+		// Cambiamos el estado del pin cada 1 segundo (según las configuraciones del HCLK = 80 MHz y del Prescaler = 8000 previamente hechas)
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	}
+}
 /* USER CODE END 4 */
 
 /**
